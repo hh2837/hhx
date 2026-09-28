@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<title>AnythingLLM 文档上传</title>
+<style>
+  body { font-family: system-ui, sans-serif; max-width: 640px; margin: 2rem auto; padding: 0 1rem; }
+  label { display: block; margin: 0.5rem 0 0.25rem; }
+  input[type=text] { width: 100%; }
+  #log { background: #111; color: #0f0; padding: 0.75rem; border-radius: 6px; min-height: 200px; white-space: pre-wrap; font-family: monospace; font-size: 13px; margin-top: 1rem; }
+  button:disabled { opacity: .5; }
+</style>
+</head>
+<body>
+<h2>AnythingLLM 上传文档到第一个工作区</h2>
+<label>API Base URL <input type="text" id="base" value="http://localhost:3001"></label>
+<label>API Key <input type="text" id="key" value="V100P7Z-1GYMTE0-P3VRHB6-ZCT8DEZ"></label>
+<label>选择文件 <input type="file" id="file"></label>
+<button id="btn">上传并嵌入</button>
+<div id="log">等待操作...</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const log = (msg) => { $('log').textContent += msg + '\n'; };
+const api = (path, opts = {}) => fetch($('base').value.trim() + '/api/v1' + path, {
+  ...opts,
+  headers: { ...(opts.headers || {}), 'Authorization': 'Bearer ' + $('key').value.trim() },
+});
+
+async function main() {
+  const file = $('file').files[0];
+  if (!file) return alert('请先选择文件');
+  $('btn').disabled = true;
+  $('log').textContent = '';
+  try {
+    log('1) 获取工作区列表...');
+    const wsRes = await api('/workspaces');
+    const ws = (await wsRes.json()).workspaces;
+    if (!wsRes.ok || !ws?.length) throw new Error('未获取到工作区: ' + JSON.stringify(ws));
+    const first = ws[0];
+    log('   第一个工作区: ' + first.name + ' (slug=' + first.slug + ')');
+
+    log('2) 上传文档...');
+    const fd = new FormData();
+    fd.append('file', file);
+    const upRes = await api('/document/upload', { method: 'POST', body: fd });
+    const up = await upRes.json();
+    if (!upRes.ok || !up.success) throw new Error('上传失败: ' + JSON.stringify(up));
+    const location = up.documents[0].location;
+    log('   文档已上传, location=' + location);
+
+    log('3) 嵌入到工作区...');
+    const embRes = await api('/workspace/' + first.slug + '/update-embeddings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adds: [location] }),
+    });
+    const emb = await embRes.json();
+    if (!embRes.ok) throw new Error('嵌入失败(' + embRes.status + '): ' + (emb.error || JSON.stringify(emb)));
+    log('   嵌入完成: 工作区文档数=' + (emb.workspace.documents || []).length);
+    log('完成!');
+  } catch (e) {
+    log('错误: ' + e.message);
+  } finally {
+    $('btn').disabled = false;
+  }
+}
+$('btn').onclick = main;
+</script>
+</body>
+</html>
