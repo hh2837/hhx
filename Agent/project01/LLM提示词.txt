@@ -1,0 +1,13 @@
+请用 Python 写一个一次性 LLM 对话脚本，要求：
+
+1. 从 config.ini 读取配置：base_url、api_key、model
+2. 使用 OpenAI 兼容格式调用 anythingllm API
+3. 运行流程：
+   - 提示用户输入问题
+   - 用户输入后按回车，程序发送请求
+   - 输出分隔线 "——"
+   - 在下方打印 AI 回复
+4. 每次请求独立，不保留对话历史
+5. 代码尽量简短，不要多余功能，不要过度设计
+6. 依赖库只用 requests（不用 openai 库）
+7. 文件名：chat.py
