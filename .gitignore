@@ -1,0 +1,7 @@
+# 忽略 API 密钥配置文件（防止上传 GitHub 泄露密钥）
+Agent/project01/config.ini
+Agent/practice02/config.ini
+
+# Python 缓存
+__pycache__/
+*.pyc

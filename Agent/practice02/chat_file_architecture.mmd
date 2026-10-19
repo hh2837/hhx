@@ -1,0 +1,56 @@
+graph TD
+    subgraph 配置层
+        CFG["config.ini"]
+        INIT["读取 base_url / api_key / model"]
+    end
+
+    subgraph 工具声明层
+        TOOLS["tools 工具定义列表<br/>name / description / parameters(JSON Schema)"]
+    end
+
+    subgraph 基础工具
+        GETDATE[getdate]
+        LEAP[isLeapYear]
+    end
+
+    subgraph 文件工具
+        CWD[get_cwd]
+        LS[list_dir]
+        INFO[file_info]
+        READ[read_file]
+        CREATE[create_file]
+        WRITE[write_file]
+        MKDIR[create_dir]
+        RMDIR[delete_dir]
+        RM[delete_file]
+        MV[move_path]
+    end
+
+    subgraph 执行层
+        MAIN[while 主循环<br/>读取用户输入]
+        LLM[requests 调用 LLM<br/>stream=True]
+        RUN[run_tool 分发器<br/>json.loads 解析参数]
+        ANSWER[输出回答并写入 history]
+        FEED[工具结果写回 history<br/>role=tool]
+    end
+
+    CFG --> MAIN
+    TOOLS -.作为 tools 参数.-> LLM
+    MAIN --> LLM
+    LLM -->|返回 tool_calls| RUN
+    LLM -->|无 tool_calls| ANSWER
+    RUN --> GETDATE
+    RUN --> LEAP
+    RUN --> CWD
+    RUN --> LS
+    RUN --> INFO
+    RUN --> READ
+    RUN --> CREATE
+    RUN --> WRITE
+    RUN --> MKDIR
+    RUN --> RMDIR
+    RUN --> RM
+    RUN --> MV
+    RUN --> FEED
+    FEED --> MAIN
+    ANSWER --> MAIN
