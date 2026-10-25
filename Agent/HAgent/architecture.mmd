@@ -1,0 +1,58 @@
+graph TD
+    subgraph 前端层["前端层（可替换 / 可并存）"]
+        direction LR
+        TUI["tui/<br/>Textual 终端界面"]
+        WEB["web/<br/>（预留）浏览器界面"]
+        DESKTOP["desktop/<br/>（预留）桌面界面"]
+        MOBILE["mobile/<br/>（预留）移动端界面"]
+    end
+
+    subgraph 接口层["前端适配层"]
+        CTRL["ChatViewPort 协议<br/>+ ChatController 事件翻译器"]
+    end
+
+    subgraph 核心层["核心层 core/（与界面无关）"]
+        direction TB
+        AGENT["agent/agent.py<br/>模型⇄工具主循环"]
+        EVENTS["events.py<br/>事件定义（唯一契约）"]
+        MODELS["models.py<br/>Message / ToolCall"]
+        TOOLS["tools/registry.py<br/>工具注册表 + Schema 生成"]
+        TDT["tools/datetime_tools.py"]
+        TFT["tools/file_tools.py（沙箱）"]
+        LLM["llm/openai_client.py<br/>SSE 流式 + function calling"]
+        SSE["llm/sse.py"]
+        CFG["config.py<br/>ini / 环境变量 / .env"]
+        ERR["errors.py<br/>统一异常体系"]
+        SESSION["agent/session.py<br/>会话持久化"]
+    end
+
+    subgraph 外部["外部依赖"]
+        SERVER["OpenAI 兼容服务<br/>LM Studio / Ollama / vLLM"]
+        FS["本地文件系统"]
+    end
+
+    TUI --> CTRL
+    WEB --> CTRL
+    DESKTOP --> CTRL
+    MOBILE --> CTRL
+
+    CTRL -->|"消费事件流"| EVENTS
+    CTRL -->|"提交提问"| AGENT
+
+    AGENT --> EVENTS
+    AGENT --> MODELS
+    AGENT --> TOOLS
+    AGENT --> LLM
+    AGENT --> SESSION
+    AGENT -.异常.-> ERR
+
+    TOOLS --> TDT
+    TOOLS --> TFT
+    TFT --> FS
+
+    LLM --> SSE
+    LLM --> SERVER
+
+    CFG --> AGENT
+    CFG --> LLM
+    CFG --> TOOLS
