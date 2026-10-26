@@ -82,7 +82,7 @@ class FilesystemConfig:
 
 @dataclass(frozen=True, slots=True)
 class UIConfig:
-    """界面配置（核心层只保留与业务相关的少数几项）。"""
+    """界面配置（核心层只保留与业务相关的少数几项）"""
 
     theme: str = "textual-dark"
     show_sidebar: bool = True
@@ -90,13 +90,21 @@ class UIConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class SearchConfig:
+    """搜索配置"""
+
+    baidu_api_key: str = ""
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
-    """应用总配置。"""
+    """应用总配置"""
 
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
     filesystem: FilesystemConfig = FilesystemConfig()
     ui: UIConfig = UIConfig()
+    search: SearchConfig = SearchConfig()
     workspace: Path = field(default_factory=Path.cwd)
     config_path: Path | None = None
 
@@ -118,6 +126,7 @@ _DEFAULTS_LLM = LLMConfig()
 _DEFAULTS_AGENT = AgentConfig()
 _DEFAULTS_FILESYSTEM = FilesystemConfig()
 _DEFAULTS_UI = UIConfig()
+_DEFAULTS_SEARCH = SearchConfig()
 
 
 @dataclass(frozen=True, slots=True)
@@ -165,6 +174,7 @@ class ConfigLoader:
         agent = self._build_agent(parser, env_values)
         filesystem = self._build_filesystem(parser, env_values)
         ui = self._build_ui(parser, env_values)
+        search = self._build_search(parser, env_values)
 
         workspace = Path(
             env_values.get("workspace") or parser.get("Agent", "workspace", fallback="") or Path.cwd()
@@ -175,6 +185,7 @@ class ConfigLoader:
             agent=agent,
             filesystem=filesystem,
             ui=ui,
+            search=search,
             workspace=workspace.resolve(),
             config_path=Path(config_path) if config_path else None,
         )
@@ -267,6 +278,14 @@ class ConfigLoader:
         sidebar_width = int(parser.get(section, "sidebar_width", fallback=str(_DEFAULTS_UI.sidebar_width)))
         return UIConfig(theme=theme, show_sidebar=show_sidebar, sidebar_width=sidebar_width)
 
+    def _build_search(self, parser: configparser.ConfigParser, env_values: dict[str, str]) -> SearchConfig:
+        section = "search"
+        baidu_api_key = (
+            self._env(env_values, "XAGENT_BAIDU_API_KEY")
+            or parser.get(section, "baidu_api_key", fallback=_DEFAULTS_SEARCH.baidu_api_key)
+        )
+        return SearchConfig(baidu_api_key=baidu_api_key.strip())
+
     @staticmethod
     def _float(raw: str | None, ini_value: Any, default: float) -> float:
         if raw:
@@ -289,5 +308,6 @@ __all__ = [
     "ConfigLoader",
     "FilesystemConfig",
     "LLMConfig",
+    "SearchConfig",
     "UIConfig",
 ]

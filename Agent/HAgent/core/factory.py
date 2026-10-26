@@ -12,13 +12,19 @@ from .config import AppConfig
 from .llm.client import LLMClient
 from .llm.openai_client import OpenAICompatibleClient
 from .tools.registry import ToolRegistry, register_builtin_tools
+from .tools.search_tools import register_search_tools
+from .tools.webfetch_tools import register_webfetch_tools
+from .tools.runcli_tools import register_runcli_tools
 
 
 def build_tools(config: AppConfig) -> ToolRegistry:
-    """按配置构建工具注册表（内置时间 + 文件系统工具）。"""
+    """按配置构建工具注册表（内置时序 + 文件系统工具 + 搜索工具 + 网页抓取工具 + CLI工具）"""
     registry = ToolRegistry()
     filesystem = dataclasses.replace(config.filesystem, root=config.sandbox_root)
     register_builtin_tools(registry, filesystem)
+    register_search_tools(registry, config.search)
+    register_webfetch_tools(registry)
+    register_runcli_tools(registry)
     return registry
 
 
