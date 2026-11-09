@@ -4,10 +4,12 @@ config.ini
 
 # 会话数据
 sessions/
-.xagent/
+.hagent/
+.agents/context/
 
 # Python 缓存
 __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+.mcp.json

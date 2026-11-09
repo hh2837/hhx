@@ -10,9 +10,13 @@ from typing import Protocol
 
 from core import (
     Agent,
-    AssistantDelta,
+    AgentsInjected,
     AssistantMessage,
     AssistantMessageStarted,
+    CompactionFinished,
+    CompactionResult,
+    CompactionStarted,
+    ContextWarning,
     ErrorOccurred,
     Event,
     RunFinished,
@@ -32,8 +36,6 @@ class ChatViewPort(Protocol):
 
     def start_assistant_message(self) -> None:
         """开始渲染一条助手消息。"""
-    def append_assistant_delta(self, text: str) -> None:
-        """追加助手消息的流式片段。"""
 
     def finish_assistant_message(self, text: str) -> None:
         """结束助手消息。"""
@@ -46,6 +48,15 @@ class ChatViewPort(Protocol):
 
     def show_error(self, message: str, detail: str = "") -> None:
         """显示错误。"""
+
+    def show_warning(self, message: str) -> None:
+        """显示警告。"""
+
+    def show_info(self, message: str) -> None:
+        """显示普通提示。"""
+
+    def show_compaction_result(self, result: CompactionResult) -> None:
+        """展示压缩前后的对照面板。"""
 
     def set_status(self, status: str) -> None:
         """更新状态提示。"""
@@ -80,6 +91,16 @@ class ChatController:
         finally:
             self._viewport.set_status("就绪")
 
+    def compact(self) -> CompactionResult:
+        """执行一次上下文压缩，并让界面展示压缩前后对照。"""
+        self._viewport.set_status("正在压缩上下文…")
+        try:
+            result = self._agent.compact(emit=self.handle_event)
+        finally:
+            self._viewport.set_status("就绪")
+        self._viewport.show_compaction_result(result)
+        return result
+
     def handle_event(self, event: Event) -> None:
         """把核心事件翻译成界面动作。"""
         if isinstance(event, RunStarted):
@@ -88,8 +109,6 @@ class ChatController:
             self._viewport.show_user_message(event.text)
         elif isinstance(event, AssistantMessageStarted):
             self._viewport.start_assistant_message()
-        elif isinstance(event, AssistantDelta):
-            self._viewport.append_assistant_delta(event.text)
         elif isinstance(event, AssistantMessage):
             self._viewport.finish_assistant_message(event.text)
         elif isinstance(event, ToolCallRequested):
@@ -98,6 +117,19 @@ class ChatController:
             self._viewport.show_tool_result(event.call, event.ok, event.output)
         elif isinstance(event, ErrorOccurred):
             self._viewport.show_error(event.message, event.detail)
+        elif isinstance(event, ContextWarning):
+            self._viewport.show_warning(event.message)
+        elif isinstance(event, CompactionStarted):
+            self._viewport.set_status("正在压缩上下文…")
+        elif isinstance(event, CompactionFinished):
+            self._viewport.show_info(
+                f"上下文压缩完成：归档 {event.archive_id}，"
+                f"摘要 {event.summary_chars} 字符。原始记录：{event.path}"
+            )
+        elif isinstance(event, AgentsInjected):
+            self._viewport.show_info(
+                f"已注入项目约定 {event.filename}（{event.chars} 字符），后续轮次自动复用。"
+            )
         elif isinstance(event, RunFinished):
             self._viewport.set_status("就绪")
 

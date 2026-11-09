@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""xAgent 统一启动入口。
+"""HAgent 统一启动入口。
 
 当前提供 TUI 前端；后续新增 web / desktop / mobile 前端时，只需在此增加
 对应的子命令，核心业务逻辑保持不变。
@@ -20,15 +20,15 @@ import sys
 from pathlib import Path
 
 from core import AppConfig, ConfigError, ConfigLoader, build_tools
-from tui import XAgentApp
+from tui import HAgentApp
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="xagent",
-        description="xAgent：核心与界面分离的多端 Agent 框架（当前内置 TUI 前端）。",
+        prog="hagent",
+        description="HAgent：核心与界面分离的多端 Agent 框架（当前内置 TUI 前端）。",
     )
-    parser.add_argument("--config", type=Path, default=None, help="配置文件路径（默认 xAgent/config.ini）")
+    parser.add_argument("--config", type=Path, default=None, help="配置文件路径（默认当前运行目录下的 config.ini）")
     parser.add_argument("--workspace", type=Path, default=None, help="工作目录（同时作为文件工具沙箱根目录）")
     parser.add_argument("--base-url", default=None, help="覆盖大模型 base_url")
     parser.add_argument("--api-key", default=None, help="覆盖大模型 api_key")
@@ -65,8 +65,13 @@ def apply_overrides(config: AppConfig, args: argparse.Namespace) -> AppConfig:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
+    loader = ConfigLoader(config_path=args.config)
+    # 配置文件缺失时，ConfigLoader 会自动生成一份含 mock 信息的 config.ini，
+    # 此时应弹出提示对话框，告知用户修改后重启。
+    config_missing = not Path(loader.target_config_path()).exists()
+
     try:
-        config = ConfigLoader(config_path=args.config).load()
+        config = loader.load()
     except ConfigError as exc:
         print(f"[配置错误] {exc}", file=sys.stderr)
         return 1
@@ -80,11 +85,20 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  - {spec.name}: {spec.description}")
         return 0
 
+    if config_missing:
+        print(
+            f"[提示] 未找到配置文件，已自动生成 {config.config_path or loader.target_config_path()}，"
+            "请修改后重新启动。",
+            file=sys.stderr,
+        )
+        HAgentApp(config, config_notice=True).run()
+        return 0
+
     if not config.llm.model:
         print("[配置错误] 未配置模型名，请在 config.ini 的 [LLM] 段填写 model，或使用 --model 指定。", file=sys.stderr)
         return 1
 
-    XAgentApp(config).run()
+    HAgentApp(config).run()
     return 0
 
 

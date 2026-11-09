@@ -1,21 +1,20 @@
 """OpenAI 兼容协议的大模型客户端。
 
 兼容绝大多数提供 ``/v1/chat/completions`` 接口的服务（LM Studio、Ollama、
-vLLM、DeepSeek、OpenAI 官方……），支持 SSE 流式输出与 function calling。
+vLLM、DeepSeek、OpenAI 官方……），使用非流式响应并支持 function calling。
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from typing import Any
 
 import requests
 
 from ..config import LLMConfig
 from ..errors import LLMConnectionError, LLMResponseError
-from ..models import Message
-from .client import LLMClient, StreamChunk, ToolCallDelta
-from .sse import iter_sse_payloads
+from ..models import Message, ToolCall
+from .client import ChatResponse, LLMClient, TokenUsage
 
 
 class OpenAICompatibleClient(LLMClient):
@@ -38,7 +37,7 @@ class OpenAICompatibleClient(LLMClient):
         payload: dict[str, Any] = {
             "model": self._config.model,
             "messages": [message.to_payload() for message in messages],
-            "stream": True,
+            "stream": False,
         }
         if tools:
             payload["tools"] = list(tools)
@@ -52,18 +51,17 @@ class OpenAICompatibleClient(LLMClient):
             headers["Authorization"] = f"Bearer {self._config.api_key}"
         return headers
 
-    def stream_chat(
+    def chat(
         self,
         messages: Sequence[Message],
         tools: Sequence[dict[str, Any]] | None = None,
-    ) -> Iterator[StreamChunk]:
+    ) -> ChatResponse:
         payload = self.build_payload(messages, tools)
         try:
             response = self._session.post(
                 self._config.chat_completions_url,
                 headers=self.build_headers(),
                 json=payload,
-                stream=True,
                 timeout=self._config.timeout,
             )
         except requests.RequestException as exc:
@@ -74,10 +72,7 @@ class OpenAICompatibleClient(LLMClient):
                 raise LLMResponseError(
                     f"大模型服务返回错误 {response.status_code}：{self._safe_body(response)}"
                 )
-            for data in iter_sse_payloads(response.iter_lines()):
-                chunk = self._to_chunk(data)
-                if chunk is not None:
-                    yield chunk
+            return self._to_response(self._read_json(response))
 
     @staticmethod
     def _safe_body(response: requests.Response) -> str:
@@ -87,36 +82,41 @@ class OpenAICompatibleClient(LLMClient):
             return "<无法读取响应体>"
 
     @staticmethod
-    def _to_chunk(data: dict[str, Any]) -> StreamChunk | None:
+    def _read_json(response: requests.Response) -> dict[str, Any]:
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise LLMResponseError(f"大模型服务返回了无法解析的响应：{exc}") from exc
+        if not isinstance(data, dict):
+            raise LLMResponseError("大模型服务返回的响应格式不是 JSON 对象。")
+        return data
+
+    @staticmethod
+    def _to_response(data: dict[str, Any]) -> ChatResponse:
         choices = data.get("choices") or []
         if not choices:
-            return None
+            return ChatResponse()
+
         choice = choices[0] or {}
-        delta = choice.get("delta") or {}
+        message = choice.get("message") or {}
 
-        content = delta.get("content") or ""
-        reasoning = delta.get("reasoning_content") or delta.get("reasoning") or ""
+        content = message.get("content") or ""
+        reasoning = message.get("reasoning_content") or message.get("reasoning") or ""
+        tool_calls = [
+            ToolCall.from_payload(raw)
+            for raw in message.get("tool_calls") or []
+            if isinstance(raw, dict)
+        ]
 
-        deltas: list[ToolCallDelta] = []
-        for raw in delta.get("tool_calls") or []:
-            function = raw.get("function") or {}
-            deltas.append(
-                ToolCallDelta(
-                    index=int(raw.get("index", 0) or 0),
-                    id=raw.get("id") or "",
-                    name=function.get("name") or "",
-                    arguments=function.get("arguments") or "",
-                )
-            )
+        raw_usage = data.get("usage")
+        usage = TokenUsage.from_payload(raw_usage) if isinstance(raw_usage, dict) else None
 
-        finish_reason = choice.get("finish_reason")
-        if not (content or reasoning or deltas or finish_reason):
-            return None
-        return StreamChunk(
+        return ChatResponse(
             content=content,
             reasoning=reasoning,
-            tool_call_deltas=deltas,
-            finish_reason=finish_reason,
+            tool_calls=tool_calls,
+            finish_reason=choice.get("finish_reason"),
+            usage=usage,
         )
 
     def close(self) -> None:

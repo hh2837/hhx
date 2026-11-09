@@ -19,8 +19,7 @@ graph TD
         TOOLS["tools/registry.py<br/>工具注册表 + Schema 生成"]
         TDT["tools/datetime_tools.py"]
         TFT["tools/file_tools.py（沙箱）"]
-        LLM["llm/openai_client.py<br/>SSE 流式 + function calling"]
-        SSE["llm/sse.py"]
+        LLM["llm/openai_client.py<br/>非流式 + function calling"]
         CFG["config.py<br/>ini / 环境变量 / .env"]
         ERR["errors.py<br/>统一异常体系"]
         SESSION["agent/session.py<br/>会话持久化"]
@@ -50,7 +49,6 @@ graph TD
     TOOLS --> TFT
     TFT --> FS
 
-    LLM --> SSE
     LLM --> SERVER
 
     CFG --> AGENT

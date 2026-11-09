@@ -46,14 +46,6 @@ class AssistantMessageStarted(Event):
     """助手开始输出（用于前端创建消息气泡）。"""
 
 
-
-@dataclass(frozen=True, kw_only=True, slots=True)
-class AssistantDelta(Event):
-    """助手回答的流式增量片段。"""
-
-    text: str = ""
-
-
 @dataclass(frozen=True, kw_only=True, slots=True)
 class AssistantMessage(Event):
     """助手回答完成（最终文本）。"""
@@ -93,16 +85,54 @@ class RunFinished(Event):
     rounds: int = 0
 
 
+@dataclass(frozen=True, kw_only=True, slots=True)
+class ContextWarning(Event):
+    """上下文使用量达到阈值，提示用户执行 /compact。"""
+
+    used_tokens: int = 0
+    window_tokens: int = 0
+    ratio: float = 0.0
+    message: str = ""
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class CompactionStarted(Event):
+    """开始压缩上下文（此时禁止其他工具调用与任务处理）。"""
+
+    message_count: int = 0
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class CompactionFinished(Event):
+    """上下文压缩成功完成。"""
+
+    archive_id: str = ""
+    path: str = ""
+    summary_chars: int = 0
+    message_count: int = 0
+
+
+@dataclass(frozen=True, kw_only=True, slots=True)
+class AgentsInjected(Event):
+    """项目约定文件（如 AGENTS.md）已作为一条消息注入会话历史。"""
+
+    filename: str = ""
+    chars: int = 0
+
+
 EventType = (
     RunStarted
     | UserMessageEcho
     | AssistantMessageStarted
-    | AssistantDelta
     | AssistantMessage
     | ToolCallRequested
     | ToolCallFinished
     | ErrorOccurred
     | RunFinished
+    | ContextWarning
+    | CompactionStarted
+    | CompactionFinished
+    | AgentsInjected
 )
 
 EventEmitter = Callable[[Event], None]
@@ -117,9 +147,12 @@ class NullEmitter:
 
 
 __all__ = [
-    "AssistantDelta",
+    "AgentsInjected",
     "AssistantMessage",
     "AssistantMessageStarted",
+    "CompactionFinished",
+    "CompactionStarted",
+    "ContextWarning",
     "ErrorOccurred",
     "Event",
     "EventEmitter",

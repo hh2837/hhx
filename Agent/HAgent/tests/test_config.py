@@ -48,9 +48,9 @@ def test_从ini读取配置(tmp_path: Path) -> None:
 
 
 def test_环境变量优先级更高(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("XAGENT_LLM_MODEL", "env-model")
-    monkeypatch.setenv("XAGENT_LLM_API_KEY", "env-key")
-    monkeypatch.setenv("XAGENT_MAX_TOOL_ROUNDS", "9")
+    monkeypatch.setenv("HAGENT_LLM_MODEL", "env-model")
+    monkeypatch.setenv("HAGENT_LLM_API_KEY", "env-key")
+    monkeypatch.setenv("HAGENT_MAX_TOOL_ROUNDS", "9")
 
     config = ConfigLoader(config_path=_write_ini(tmp_path)).load()
 
@@ -74,9 +74,19 @@ def test_聊天接口地址拼接正确() -> None:
 
 
 def test_非法浮点配置会报错(tmp_path: Path, monkeypatch) -> None:
-    monkeypatch.setenv("XAGENT_LLM_TIMEOUT", "abc")
+    monkeypatch.setenv("HAGENT_LLM_TIMEOUT", "abc")
     try:
         ConfigLoader(config_path=_write_ini(tmp_path)).load()
     except ConfigError:
         return
     raise AssertionError("应当抛出 ConfigError")
+
+
+def test_默认配置在运行目录下生成(tmp_path: Path, monkeypatch) -> None:
+    """在哪个目录运行智能体，就在哪个目录生成 config.ini。"""
+    monkeypatch.chdir(tmp_path)
+    loader = ConfigLoader()  # 不显式指定路径，走默认
+    assert loader.target_config_path() == (tmp_path / "config.ini")
+    config = loader.load()
+    assert (tmp_path / "config.ini").exists()
+    assert config.llm.model == "mock-model"

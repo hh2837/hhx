@@ -122,7 +122,7 @@ class SearchTools:
 
         api_key = (self._config.baidu_api_key or "").strip()
         if not api_key:
-            err = ToolResult.failure("缺少百度千帆 API 配置：请在 config.ini 的 [search] 小节设置 baidu_api_key，或通过环境变量 XAGENT_BAIDU_API_KEY 配置。").error
+            err = ToolResult.failure("缺少百度千帆 API 配置：请在 config.ini 的 [search] 小节设置 baidu_api_key，或通过环境变量 HAGENT_BAIDU_API_KEY 配置。").error
             return err or "缺少搜索配置"
 
         headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

@@ -1,40 +1,28 @@
-"""SSE 解析与控制器翻译的测试。"""
+"""控制器翻译与非流式客户端解析的测试。"""
 
 from __future__ import annotations
 
-from core import Agent, AgentConfig, StreamChunk, ToolCallDelta, ToolRegistry
+from core import (
+    Agent,
+    AgentConfig,
+    ChatResponse,
+    LLMConfig,
+    OpenAICompatibleClient,
+    ToolCall,
+    ToolRegistry,
+)
 from core.llm.client import LLMClient
-from core.llm.sse import iter_sse_payloads, parse_sse_line
 from tui.controller import ChatController
 
 
 class FakeClient(LLMClient):
-    """按脚本产出流式分段：每次请求消耗一段脚本。"""
+    """按脚本返回完整响应：每次请求消耗一段脚本。"""
 
-    def __init__(self, scripts: list[list[StreamChunk]]) -> None:
+    def __init__(self, scripts: list[ChatResponse]) -> None:
         self.scripts = list(scripts)
 
-    def stream_chat(self, messages, tools=None):
-        script = self.scripts.pop(0) if self.scripts else []
-        yield from script
-
-
-def test_解析data行() -> None:
-    payload = parse_sse_line(b'data: {"choices": [{"delta": {"content": "hi"}}]}')
-    assert payload is not None
-    assert payload["choices"][0]["delta"]["content"] == "hi"
-
-
-def test_忽略心跳与结束标记() -> None:
-    assert parse_sse_line(b": ping") is None
-    assert parse_sse_line(b"data: [DONE]") is None
-    assert parse_sse_line(b"") is None
-    assert parse_sse_line(b"event: message") is None
-
-
-def test_批量迭代忽略非法json() -> None:
-    payloads = list(iter_sse_payloads([b"data: {bad}", b'data: {"ok": true}']))
-    assert payloads == [{"ok": True}]
+    def chat(self, messages, tools=None):
+        return self.scripts.pop(0) if self.scripts else ChatResponse()
 
 
 class RecordingViewport:
@@ -51,9 +39,6 @@ class RecordingViewport:
 
     def start_assistant_message(self) -> None:
         self._record("assistant-start")
-
-    def append_assistant_delta(self, text: str) -> None:
-        self._record("delta", text)
 
     def finish_assistant_message(self, text: str) -> None:
         self._record("assistant-end", text)
@@ -80,12 +65,10 @@ class RecordingViewport:
 def test_控制器把事件翻译成界面动作() -> None:
     client = FakeClient(
         [
-            [
-                StreamChunk(
-                    tool_call_deltas=[ToolCallDelta(index=0, id="c1", name="noop", arguments="{}")]
-                )
-            ],
-            [StreamChunk(content="完成")],
+            ChatResponse(
+                tool_calls=[ToolCall(id="c1", name="noop", arguments={})]
+            ),
+            ChatResponse(content="完成"),
         ]
     )
     agent = Agent(
@@ -113,3 +96,35 @@ def test_控制器忽略空输入() -> None:
     controller = ChatController(agent, viewport)
     assert controller.submit("   ") == ""
     assert viewport.calls == []
+
+
+def test_请求体使用非流式模式() -> None:
+    client = OpenAICompatibleClient(LLMConfig(model="test-model"))
+    payload = client.build_payload([])
+    assert payload["stream"] is False
+
+
+def test_解析非流式完整响应() -> None:
+    response = OpenAICompatibleClient._to_response(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "好的",
+                        "tool_calls": [
+                            {
+                                "id": "c1",
+                                "type": "function",
+                                "function": {"name": "noop", "arguments": '{"a": 1}'},
+                            }
+                        ],
+                    },
+                    "finish_reason": "tool_calls",
+                }
+            ]
+        }
+    )
+    assert response.content == "好的"
+    assert response.finish_reason == "tool_calls"
+    assert response.tool_calls[0].name == "noop"
+    assert response.tool_calls[0].arguments == {"a": 1}

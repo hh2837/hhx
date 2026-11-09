@@ -1,4 +1,4 @@
-"""侧边栏控件：会话信息 + 工具活动日志。"""
+"""侧边栏控件：会话信息 + MCP 服务器与工具 + 工具活动日志。"""
 
 from __future__ import annotations
 
@@ -13,12 +13,18 @@ class Sidebar(VerticalScroll):
     def compose(self) -> ComposeResult:
         yield Label("会话信息", classes="panel-title")
         yield Static("（暂无）", id="session-info")
+        yield Label("MCP 服务器", classes="panel-title")
+        yield Static("（未加载）", id="mcp-info")
         yield Label("工具活动", classes="panel-title")
         yield RichLog(id="tool-log", markup=False, highlight=False, wrap=True)
 
     def update_session_info(self, text: str) -> None:
         """刷新会话信息区域。"""
         self.query_one("#session-info", Static).update(text)
+
+    def update_mcp(self, text: str) -> None:
+        """刷新 MCP 服务器与工具区域。"""
+        self.query_one("#mcp-info", Static).update(text)
 
     def log(self, text: str) -> None:
         """向工具活动日志追加一行。"""

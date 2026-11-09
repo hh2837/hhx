@@ -53,9 +53,37 @@ Screen {
     padding: 0 2;
 }
 
+#command-palette {
+    width: 1fr;
+    border: round $accent;
+    background: $surface;
+    color: $text;
+    padding: 0 1;
+    height: auto;
+    max-height: 12;
+}
+
 #prompt {
     border: tall $accent;
     background: $boost;
+}
+
+#mcp-info {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+.mcp-server {
+    color: $accent;
+    text-style: bold;
+}
+
+.mcp-tool {
+    color: $text-muted;
+}
+
+.mcp-error {
+    color: $error;
 }
 
 #status {
@@ -63,6 +91,11 @@ Screen {
     background: $panel;
     color: $text-muted;
     padding: 0 2;
+}
+
+#status.status-warning {
+    color: $warning;
+    text-style: bold;
 }
 
 .user-message {
@@ -96,6 +129,140 @@ Screen {
 .info-message {
     color: $text-muted;
     margin: 1 0 0 0;
+}
+
+.warning-message {
+    color: $warning;
+    text-style: bold;
+    margin: 1 0 0 0;
+}
+
+CompactionScreen {
+    align: center middle;
+}
+
+#compaction-dialog {
+    width: 94%;
+    height: 90%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#compaction-title {
+    color: $accent;
+    text-style: bold;
+}
+
+#compaction-meta {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+#compaction-panes {
+    height: 1fr;
+}
+
+.compaction-pane {
+    width: 1fr;
+    height: 1fr;
+    border: round $panel;
+    margin: 0 1;
+}
+
+.compaction-pane-title {
+    color: $accent;
+    text-style: bold;
+    padding: 0 1;
+}
+
+#compaction-original-scroll,
+#compaction-summary-scroll {
+    height: 1fr;
+    padding: 0 1;
+}
+
+.compaction-content {
+    width: 100%;
+    height: auto;
+}
+
+#compaction-actions {
+    height: auto;
+    align: right middle;
+    margin-top: 1;
+}
+
+SessionResumeScreen {
+    align: center middle;
+}
+
+#resume-dialog {
+    width: 70%;
+    max-width: 90;
+    height: 60%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+
+#resume-title {
+    color: $accent;
+    text-style: bold;
+}
+
+#resume-hint {
+    color: $text-muted;
+    margin: 0 0 1 0;
+}
+
+#resume-empty {
+    color: $text-muted;
+    margin: 1 0;
+}
+
+#resume-list-scroll {
+    height: 1fr;
+    border: round $panel;
+}
+
+#resume-list {
+    height: auto;
+}
+
+#resume-actions {
+    height: auto;
+    align: right middle;
+    margin-top: 1;
+}
+
+ConfigNoticeScreen {
+    align: center middle;
+}
+
+#config-notice-dialog {
+    width: 76%;
+    max-width: 100;
+    height: auto;
+    border: thick $warning;
+    background: $surface;
+    padding: 2 3;
+}
+
+#config-notice-title {
+    color: $warning;
+    text-style: bold;
+    margin-bottom: 1;
+}
+
+#config-notice-body {
+    color: $text;
+    margin-bottom: 1;
+}
+
+#config-notice-hint {
+    color: $text-muted;
+    margin-bottom: 1;
 }
 """
 

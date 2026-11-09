@@ -1,4 +1,4 @@
-# xAgent —— 核心与界面分离的多端 Agent 框架
+# HAgent —— 核心与界面分离的多端 Agent 框架
 
 由 [`Agent/practice02/chat_file.py`](../practice02/chat_file.py) 改造而来：把"脚本"
 拆成**可复用的业务内核（core）**与**可替换的前端（tui / web / desktop / mobile）**。
@@ -16,14 +16,15 @@
 | 业务模块化 | 工具按域拆分（`core/tools/datetime_tools.py`、`file_tools.py`），通过注册表装配 |
 | 层级化 | `config → models/events → llm/tools → agent → frontend`，依赖只能向下 |
 | 多端复用 | 前端之间零耦合；核心通过**事件流**把状态变化推送给任意前端 |
-| 可测试 | 核心层 33 个离线用例，不需要启动界面、不需要真实模型服务 |
+| 可测试 | 核心层 70+ 个离线用例，不需要启动界面、不需要真实模型服务 |
+| 长任务可持续 | `/compact` 压缩历史 + `.agents/context/` 原始归档 + `recallContext` 历史检索 |
 
 ---
 
 ## 2. 目录结构
 
 ```
-xAgent/
+HAgent/
 ├── main.py                     # 统一启动入口（参数解析 + 装配）
 ├── config.ini                  # 本地配置（已被 .gitignore 忽略，不入库）
 ├── config.example.ini          # 配置模板（入库）
@@ -33,17 +34,18 @@ xAgent/
 ├── core/                       # ★ 业务内核：零 UI 依赖
 │   ├── __init__.py             # 公共 API 出口（前端只从这里导入）
 │   ├── config.py               # 配置层：ini / 环境变量 / .env → 强类型配置
-│   ├── errors.py               # 统一异常体系（XAgentError 为根）
+│   ├── errors.py               # 统一异常体系（HAgentError 为根）
 │   ├── models.py               # 领域模型：Message / ToolCall
 │   ├── events.py               # 事件定义：核心 ↔ 前端的唯一契约
+│   ├── context.py              # 上下文归档 / Token 估算 / 压缩 Prompt / 本地检索
 │   ├── factory.py              # 装配工厂：build_agent / build_client / build_tools
 │   ├── llm/                    # 大模型接入层
-│   │   ├── client.py           #   LLMClient 抽象 + StreamChunk
-│   │   ├── openai_client.py    #   OpenAI 兼容实现（SSE 流式 + function calling）
-│   │   └── sse.py              #   SSE 解析
+│   │   ├── client.py           #   LLMClient 抽象 + ChatResponse
+│   │   └── openai_client.py    #   OpenAI 兼容实现（非流式 + function calling）
 │   ├── tools/                  # 工具层
 │   │   ├── base.py             #   ToolSpec / ToolResult
 │   │   ├── registry.py         #   工具注册表 + JSON Schema 自动生成
+│   │   ├── context_tools.py    #   recallContext 历史上下文检索
 │   │   ├── datetime_tools.py   #   时间工具
 │   │   └── file_tools.py       #   文件系统工具（沙箱限制）
 │   └── agent/                  # 编排层
@@ -78,7 +80,7 @@ xAgent/
         ┌───────────────────▼───────────────────────────┐
         │  核心层 core/（与界面完全无关）                 │
         │  agent/ → tools/ 、 llm/                       │
-        │  事件：RunStarted / AssistantDelta /           │
+        │  事件：RunStarted / AssistantMessage /         │
         │        ToolCallRequested / ToolCallFinished … │
         └───────────────────┬───────────────────────────┘
                             │
@@ -103,8 +105,7 @@ xAgent/
 | `RunStarted` | 一轮对话开始 |
 | `UserMessageEcho` | 用户输入已写入历史 |
 | `AssistantMessageStarted` | 助手开始输出（前端据此创建消息气泡） |
-| `AssistantDelta` | 流式增量片段 |
-| `AssistantMessage` | 本轮回答结束 |
+| `AssistantMessage` | 本轮回答完成（携带完整文本） |
 | `ToolCallRequested` / `ToolCallFinished` | 工具调用请求 / 结果 |
 | `ErrorOccurred` / `RunFinished` | 错误 / 本轮结束 |
 
@@ -118,20 +119,42 @@ xAgent/
 - 文件系统工具默认**沙箱化**：路径统一归一化，越界路径直接拒绝。
 
 内置工具：`getdate`、`isLeapYear`、`get_cwd`、`list_dir`、`file_info`、`read_file`、
-`create_file`、`write_file`、`create_dir`、`delete_dir`、`delete_file`、`move_path`。
+`create_file`、`write_file`、`create_dir`、`delete_dir`、`delete_file`、`move_path`、
+`recallContext`。
 
 ### 4.3 模型接入
 
 `LLMClient` 是抽象基类，`OpenAICompatibleClient` 为 OpenAI 兼容协议实现
-（LM Studio / Ollama / vLLM / DeepSeek 等均可直接使用），支持 SSE 流式输出与
-function calling，工具调用参数按 `index` 聚合，支持分片拼接。
+（LM Studio / Ollama / vLLM / DeepSeek 等均可直接使用），采用非流式请求，
+一次性返回完整回答与 function calling 工具调用。响应中的 `usage` 会用于上下文
+Token 统计；API 未返回时按字符数粗略估算。
+
+### 4.4 上下文压缩与历史检索
+
+长任务容易撑满上下文窗口，HAgent 采用一套简单、可理解的方案：
+
+1. **监控**：每次模型响应后检查上下文 Token 使用量，达到窗口的 70% 时在 TUI
+   状态栏和对话区发出警告，并暂停接受新的普通提示词。
+2. **手动压缩**：用户输入 `/compact`。压缩期间只允许调用 LLM 生成摘要，不执行
+   其他工具，也不处理原任务。
+3. **归档**：压缩前先把完整原始上下文写入 `.agents/context/<编号>.jsonl`（角色、
+   内容、工具调用参数、工具结果、消息顺序全部保留），保存成功后才继续。
+4. **替换**：LLM 根据专用 Prompt 生成约 5,000 Tokens 的 Markdown 摘要；系统提示词
+   与工具定义保持不变，历史替换为「摘要 + 归档说明」。摘要末尾会提示使用
+   `recallContext` 查找细节。压缩完成后 TUI 会弹出左右对照面板：左侧为压缩前
+   原文，右侧为压缩后摘要，两栏均支持鼠标滚轮滚动，可用「关闭」按钮或 `Esc` 关闭。
+5. **检索**：`recallContext(text, id?)` 在指定归档或全部归档中做本地全文关键词
+   匹配，返回归档编号、消息位置、角色和片段，并限制结果数量避免再次撑满上下文。
+
+TUI 状态栏会醒目显示：`上下文：12.3k / 128k（9.6%，默认）`。无法获得模型窗口
+大小时使用 128k，并标注「默认」。
 
 ---
 
 ## 5. 快速开始
 
 ```bash
-cd Agent/xAgent
+cd Agent/HAgent
 
 # 1. 安装依赖
 pip install -r requirements.txt
@@ -161,9 +184,10 @@ python main.py --list-tools                  # 查看内置工具
 | 快捷键 | 功能 |
 |---|---|
 | `Enter` | 发送 |
+| `/compact` | 压缩当前上下文并归档原始记录 |
 | `Ctrl+Q` | 退出 |
 | `Ctrl+N` | 新会话（清空历史与界面） |
-| `Ctrl+S` | 保存当前会话到 `.xagent/sessions/` |
+| `Ctrl+S` | 保存当前会话到 `.hagent/sessions/` |
 | `Ctrl+L` | 清屏（保留历史） |
 
 ---
@@ -174,14 +198,17 @@ python main.py --list-tools                  # 查看内置工具
 
 | 环境变量 | 说明 |
 |---|---|
-| `XAGENT_CONFIG` | 指定配置文件路径 |
-| `XAGENT_LLM_BASE_URL` / `XAGENT_LLM_API_KEY` / `XAGENT_LLM_MODEL` | 覆盖 `[LLM]` |
-| `XAGENT_LLM_TIMEOUT` / `XAGENT_LLM_TEMPERATURE` | 覆盖超时与温度 |
-| `XAGENT_MAX_TOOL_ROUNDS` | 单轮内最大工具调用轮次 |
-| `XAGENT_SYSTEM_PROMPT` | 覆盖系统提示词 |
-| `XAGENT_FS_ROOT` | 文件工具沙箱根目录（默认工作目录） |
-| `XAGENT_WORKSPACE` | 工作目录 |
-| `XAGENT_THEME` | Textual 主题名 |
+| `HAGENT_CONFIG` | 指定配置文件路径 |
+| `HAGENT_LLM_BASE_URL` / `HAGENT_LLM_API_KEY` / `HAGENT_LLM_MODEL` | 覆盖 `[LLM]` |
+| `HAGENT_LLM_TIMEOUT` / `HAGENT_LLM_TEMPERATURE` | 覆盖超时与温度 |
+| `HAGENT_LLM_CONTEXT_WINDOW` | 模型上下文窗口大小（Token）；不填按 128k 处理并标注「默认」 |
+| `HAGENT_MAX_TOOL_ROUNDS` | 单轮内最大工具调用轮次 |
+| `HAGENT_COMPACT_THRESHOLD` | 触发上下文警告的比例，默认 `0.7` |
+| `HAGENT_COMPACT_TARGET_TOKENS` | 压缩摘要目标 Token 数，默认 `5000` |
+| `HAGENT_SYSTEM_PROMPT` | 覆盖系统提示词 |
+| `HAGENT_FS_ROOT` | 文件工具沙箱根目录（默认工作目录） |
+| `HAGENT_WORKSPACE` | 工作目录 |
+| `HAGENT_THEME` | Textual 主题名 |
 
 `config.ini` 与 `.env` 已被 `.gitignore` 忽略，**不要把密钥提交到仓库**。
 
@@ -190,8 +217,8 @@ python main.py --list-tools                  # 查看内置工具
 ## 7. 测试与代码规范
 
 ```bash
-cd Agent/xAgent
-python -m pytest -q          # 33 passed
+cd Agent/HAgent
+python -m pytest -q          # 全部离线用例
 ruff check core tui tests    # 规范检查（规则集见 pyproject.toml）
 ```
 
@@ -211,7 +238,7 @@ Textual 的 `run_test()` 驱动。
 | `run_tool` if/elif 分发 | `ToolRegistry.execute()` + 装饰器注册 |
 | `history` 列表 | `core/models.py` 的 `Message` + `core/agent/session.py` 持久化 |
 | `while True` + `input()` 主循环 | `core/agent/agent.py`（事件驱动）+ `tui/app.py`（界面） |
-| `print(content, end="")` 流式输出 | `AssistantDelta` 事件 → `tui/widgets/chat_view.py` |
+| `print(content, end="")` 输出 | `AssistantMessage` 事件 → `tui/widgets/chat_view.py` |
 
 ---
 
@@ -220,7 +247,7 @@ Textual 的 `run_test()` 驱动。
 1. 新建 `web/` 目录与 `web/app.py`；
 2. 只从 `core` 导入：`from core import Agent, build_agent, ConfigLoader, ...`；
 3. 实现一个类似 `ChatViewPort` 的适配层，把 `core.events` 翻译成前端动作
-   （SSE / WebSocket 推给浏览器）；
+   （WebSocket 推给浏览器）；
 4. 在 `main.py` 中增加子命令分发。
 
 `core/` 不需要任何改动。
@@ -230,7 +257,7 @@ Textual 的 `run_test()` 驱动。
 ## 10. 安全须知
 
 - **不要提交 `config.ini` / `.env`**（含 API Key），已通过 `.gitignore` 排除。
-- 文件工具默认限制在工作目录内；如需放开，可通过 `XAGENT_FS_ROOT` 显式指定，
+- 文件工具默认限制在工作目录内；如需放开，可通过 `HAGENT_FS_ROOT` 显式指定，
   但请评估风险。
 - 删除类工具（`delete_file` / `delete_dir`）由模型触发，建议在生产环境加人工确认。
 

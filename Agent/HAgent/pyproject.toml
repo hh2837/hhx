@@ -3,21 +3,23 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "xagent"
+name = "hagent"
 version = "0.1.0"
 description = "核心与界面分离的多端 Agent 框架（当前内置 Textual TUI 前端）"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "PyYAML>=6.0",
     "requests>=2.31",
     "textual>=1.0",
+    "mcp>=1.8.0",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
 
 [project.scripts]
-xagent = "tui.__main__:main"
+hagent = "tui.__main__:main"
 
 [tool.setuptools]
 packages = ["core", "core.agent", "core.llm", "core.tools", "tui", "tui.widgets"]

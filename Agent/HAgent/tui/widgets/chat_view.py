@@ -26,10 +26,10 @@ class ChatView(VerticalScroll):
     只负责"把内容显示出来"，不包含任何业务逻辑。
     """
 
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, tool_output_limit: int = MAX_INLINE_LENGTH, **kwargs) -> None:
         super().__init__(**kwargs)
         self._assistant: Markdown | None = None
-        self._assistant_buffer = ""
+        self._tool_output_limit = tool_output_limit or MAX_INLINE_LENGTH
 
     # ------------------------------------------------------------------ 消息
 
@@ -38,24 +38,18 @@ class ChatView(VerticalScroll):
         self._append(Static(f"你 › {text}", classes="user-message", markup=False))
 
     def start_assistant_message(self) -> None:
-        """开始一条助手消息（后续增量会不断刷新它）。"""
-        self._assistant_buffer = ""
+        """创建一条空的助手消息。"""
         widget = Markdown("")
         self._assistant = widget
         self._append(widget)
 
-    def append_assistant_delta(self, text: str) -> None:
-        """追加助手回答的流式片段。"""
-        self._assistant_buffer += text
-        if self._assistant is not None:
-            self._assistant.update(self._assistant_buffer)
-
     def finish_assistant_message(self, text: str) -> None:
-        """结束助手消息并定格最终内容。"""
-        if self._assistant is not None:
-            self._assistant.update(text or self._assistant_buffer)
+        """写入助手回答的完整内容。"""
+        if self._assistant is None:
+            self._append(Markdown(text))
+            return
+        self._assistant.update(text)
         self._assistant = None
-        self._assistant_buffer = ""
 
     def add_tool_call(self, call: ToolCall) -> None:
         """展示一次工具调用请求。"""
@@ -68,7 +62,13 @@ class ChatView(VerticalScroll):
     def add_tool_result(self, call: ToolCall, ok: bool, output: str) -> None:
         """展示工具执行结果。"""
         classes = "tool-result" if ok else "tool-result tool-result-error"
-        self._append(Static(truncate(output), classes=classes, markup=False))
+        self._append(
+            Static(
+                truncate(output, self._tool_output_limit),
+                classes=classes,
+                markup=False,
+            )
+        )
 
     def add_error(self, message: str) -> None:
         """展示错误信息。"""
@@ -78,11 +78,14 @@ class ChatView(VerticalScroll):
         """展示普通提示信息。"""
         self._append(Static(message, classes="info-message", markup=False))
 
+    def add_warning(self, message: str) -> None:
+        """展示警告信息（例如上下文即将达到上限）。"""
+        self._append(Static(f"⚠ {message}", classes="warning-message", markup=False))
+
     def clear(self) -> None:
         """清空整个对话区。"""
         self.remove_children()
         self._assistant = None
-        self._assistant_buffer = ""
 
     # ------------------------------------------------------------------ 内部
 
