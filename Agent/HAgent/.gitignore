@@ -13,3 +13,7 @@ __pycache__/
 .pytest_cache/
 .venv/
 .mcp.json
+# 通过目录联接挂载的外部技能（源目录在项目外，不随仓库提交）
+.agents/skills/travel-assistant/
+# 第三方技能（通过 junction 接入，不进仓库）
+.agents/skills/guizang-ppt-skill/
